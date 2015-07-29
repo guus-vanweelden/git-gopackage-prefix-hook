@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -19,54 +20,53 @@ func readFile(filename string) string {
 	return string(contents)
 }
 
-func main() {
-	cmd := exec.Command("git", "status", "-s")
+func runCommand(command string, values ...string) string {
+	cmd := exec.Command(command, values...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
 		panic(err)
 	}
+	return out.String()
+}
 
-	resultLines := strings.Split(out.String(), "\n")
+func main() {
+	gitDir := runCommand("git", "rev-parse", "--git-dir")
+	gitDiff := runCommand("git", "diff", "--name-only", "--cached")
+
+	absolutePath := filepath.Dir(gitDir)
+
+	resultLines := strings.Split(gitDiff, "\n")
 	if resultLines == nil {
 		return
 	}
 
 	re := regexp.MustCompile(`package\s(\w+)`)
 	names := make(map[string]bool)
-	for _, filenameStatus := range resultLines {
-		if filenameStatus != "" {
-			explodedStatus := strings.Split(strings.TrimSpace(filenameStatus), " ")
-			if len(explodedStatus) > 1 {
-				filename := explodedStatus[len(explodedStatus)-1]
-				status := explodedStatus[0]
-				if status == "??" {
-					continue
-				}
+	var prefix string
+	for _, filename := range resultLines {
+		if filename != "" {
+			content := readFile(absolutePath + "/" + filename)
 
-				content := readFile(filename)
+			pkg := re.FindStringSubmatch(string(content))
 
-				pkg := re.FindStringSubmatch(string(content))
-				if len(pkg) > 1 {
-					names[pkg[1]] = true
-				}
-
+			if len(pkg) < 2 {
+				continue
 			}
+			if _, found := names[pkg[1]]; !found {
+				if prefix != "" {
+					prefix += "|"
+				}
+				prefix += pkg[1]
+				names[pkg[1]] = true
+			}
+
 		}
 	}
 
-	if len(names) > 0 {
-		prefix := "["
-		i := 0
-		for name, _ := range names {
-			if i > 0 {
-				prefix += "|"
-			}
-			prefix += name
-			i++
-		}
-		prefix += "] "
+	if prefix != "" {
+		prefix = "[" + prefix + "]"
 		filename := os.Args[1]
 		msg := readFile(filename)
 		ioutil.WriteFile(filename, []byte(prefix+msg), 0x777)
