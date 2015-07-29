@@ -66,7 +66,7 @@ func main() {
 	}
 
 	if prefix != "" {
-		prefix = "[" + prefix + "]"
+		prefix = "[" + prefix + "] "
 		filename := os.Args[1]
 		msg := readFile(filename)
 		ioutil.WriteFile(filename, []byte(prefix+msg), 0x777)
